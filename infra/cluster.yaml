@@ -1,0 +1,70 @@
+# =============================================================================
+# Configuration eksctl - Atelier DevOps EKS + ArgoCD
+# =============================================================================
+# Cluster EKS minimal, pensé pour un atelier de 2h30, exécuté dans la
+# sandbox AWS Pluralsight (Hands-on Playground).
+#
+# Objectif : le plus léger possible pour limiter le temps de création.
+#   - 1 nodegroup managé
+#   - 2 nœuds t3.medium (suffisant pour ArgoCD + podinfo)
+#
+# ⚠️  Durée de création attendue : ~15 à 20 minutes.
+#     Lancez la commande DÈS LE DÉBUT, avant la partie théorique.
+#
+# -----------------------------------------------------------------------------
+# CONTRAINTES SANDBOX PLURALSIGHT (respectées par ce fichier) :
+#   - Régions autorisées : us-east-1 ou us-west-2 UNIQUEMENT -> us-east-1 ici.
+#   - Types EC2 autorisés : t2/t3/t3a/t4g en micro/small/medium -> t3.medium OK.
+#   - Max 9 instances concurrentes, volume <= 100 Go -> 2 nœuds / 20 Go OK.
+#   - La sandbox est détruite automatiquement après ~4h : pas de coût à gérer.
+# -----------------------------------------------------------------------------
+# 👥  CAS PARTICULIER — SANDBOX PARTAGÉE À DEUX :
+#     Si vous DEVEZ partager une même sandbox avec un binôme (chacun garde son
+#     propre cluster EKS), les DEUX clusters ne peuvent PAS porter le même nom.
+#     -> Chaque personne remplace ci-dessous `atelier-argocd` par un nom unique,
+#        p. ex. `atelier-argocd-alice` / `atelier-argocd-bob`.
+#     En solo (une sandbox par personne), NE CHANGEZ RIEN : le nom par défaut convient.
+# -----------------------------------------------------------------------------
+# Créer le cluster :
+#     eksctl create cluster -f infra/cluster.yaml
+#
+# Vérifier :
+#     kubectl get nodes
+#
+# Supprimer le cluster (OPTIONNEL en sandbox : tout est détruit à la fin,
+# mais le faire libère la sandbox plus tôt) :
+#     eksctl delete cluster -f infra/cluster.yaml
+# =============================================================================
+
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  # Solo : laissez `atelier-argocd`. Sandbox partagée : suffixez avec votre ID
+  # (ex. atelier-argocd-alice) pour éviter une collision avec le cluster du binôme.
+  name: atelier-argocd
+  # Sandbox Pluralsight : SEULES us-east-1 et us-west-2 sont autorisées.
+  region: us-east-1
+  # Version EKS en "standard support" (les versions en extended support sont
+  # interdites dans la sandbox). Vérifiez la liste du jour : `eksctl` la renvoie
+  # en cas de version invalide. 1.30 à 1.33 sont sorties du support standard.
+  version: "1.34"
+
+# Nodegroup managé : AWS gère le cycle de vie des nœuds.
+managedNodeGroups:
+  - name: ng-atelier
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 2
+    # Disque par nœud (Go). 20 Go suffisent largement pour l'atelier.
+    volumeSize: 20
+    # Autorise l'accès SSH ? Non nécessaire pour l'atelier -> désactivé.
+    ssh:
+      allow: false
+
+# Active les logs du control plane (optionnel, utile pour le debug).
+# Décommentez si besoin — génère des logs CloudWatch (petit coût).
+# cloudWatch:
+#   clusterLogging:
+#     enableTypes: ["api", "audit"]

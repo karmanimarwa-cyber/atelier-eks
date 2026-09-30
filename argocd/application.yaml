@@ -1,0 +1,45 @@
+# =============================================================================
+# Application ArgoCD - podinfo (chart Helm)
+# =============================================================================
+# ArgoCD surveille le chart Helm situé dans charts/podinfo de VOTRE fork, le
+# rend (helm template) et synchronise le cluster. À mesure que vous ajoutez des
+# templates et committez, ArgoCD applique automatiquement les changements.
+#
+# ⚠️  Remplacez repoURL par l'URL de VOTRE fork avant d'appliquer.
+#
+# Appliquer :  kubectl apply -f argocd/application.yaml
+# Suivre    :  kubectl -n argocd get applications
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: podinfo
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    # 👇 REMPLACEZ TOUTE l'URL par celle de VOTRE fork
+    #    (page GitHub de votre fork → bouton « Code » → onglet HTTPS).
+    repoURL: https://gitlab.com/karmeni/atelier-kubernetes.git
+    targetRevision: main
+    # Chemin du chart Helm dans le dépôt. ArgoCD détecte Helm via Chart.yaml.
+    path: charts/podinfo
+    helm:
+      # Fichier de valeurs utilisé pour rendre le chart.
+      valueFiles:
+        - values.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: podinfo
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

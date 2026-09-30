@@ -1,93 +1,129 @@
-# atelier-kubernetes
+# Atelier GitOps — Construire un chart Helm déployé par ArgoCD sur EKS
 
+Repo **template** de l'atelier. Chaque participant **forke** ce dépôt, provisionne
+un cluster EKS **dans la sandbox AWS Pluralsight**, installe **ArgoCD**, puis
+**écrit lui-même**, pas à pas, un **chart Helm** pour le microservice **podinfo**.
+Chaque commit est synchronisé automatiquement par ArgoCD : on voit l'application
+se construire, composant par composant.
 
+> 🎓 **Vous suivez l'atelier ?** Ouvrez [`guide.html`](guide.html) dans votre
+> navigateur : c'est le parcours pas-à-pas. Ce README décrit le **contenu du dépôt**
+> (référence technique).
 
-## Getting started
+---
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Objectif de l'atelier
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+Public : développeurs à l'aise avec Docker, débutants sur Kubernetes/AWS. Pas de
+durée stricte : le guide est **autonome** et peut se terminer à la maison. À la fin,
+vous saurez :
 
-## Add your files
+- Provisionner un cluster **EKS** avec `eksctl`.
+- Installer **ArgoCD** et déclarer une **Application** en mode **Helm**.
+- **Écrire un chart Helm** (Deployment, Service, valeurs, sondes, HPA).
+- Vivre le **GitOps** : commit → synchronisation automatique → app mise à jour.
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+---
+
+## Deux environnements
+
+| Environnement | Rôle | Ce qu'on y fait |
+|---------------|------|-----------------|
+| **AWS CloudShell** | Interactions AWS / cluster | Créer l'EKS, installer ArgoCD, `kubectl`, générer le kubeconfig |
+| **Poste local (IDE)** | Écriture du code | Éditer le chart Helm, `helm lint`, `git` |
+
+> 🔒 Le poste local ne lance **jamais** de commande AWS → aucun risque de créer des
+> ressources sur un compte d'entreprise. L'accès aux UIs se fait via un **kubeconfig
+> par jeton** (généré dans CloudShell, utilisé en local sans AWS).
+
+---
+
+## Structure du dépôt
 
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/karmeni/atelier-kubernetes.git
-git branch -M main
-git push -uf origin main
+.
+├── README.md                  # ce fichier (référence technique)
+├── guide.html                 # guide pas-à-pas (à ouvrir au navigateur)
+├── .gitignore                 # ignore .local/ (kubeconfig local), secrets, artefacts Helm…
+├── infra/
+│   └── cluster.yaml           # config eksctl (EKS minimal, us-east-1, v1.34)
+├── argocd/
+│   ├── application.yaml       # Application ArgoCD (source Helm → charts/podinfo)
+│   ├── dashboard.yaml         # Applications ArgoCD (Kubernetes Dashboard + metrics-server) — workloads, events, logs, CPU/RAM
+│   ├── monitoring.yaml        # Application ArgoCD (Prometheus, kube-prometheus-stack allégé)
+│   └── dynatrace.yaml         # Applications ArgoCD (Dynatrace Operator + DynaKube) — bonus
+├── dynatrace/
+│   └── dynakube.yaml          # CR DynaKube (apiUrl à personnaliser) — bonus, complément de Prometheus
+├── charts/
+│   └── podinfo/               # chart Helm — SQUELETTE à compléter par le participant
+│       ├── Chart.yaml         # métadonnées du chart
+│       ├── values.yaml        # valeurs de départ (image, replicaCount)
+│       └── templates/         # VIDE au départ — vous y écrivez deployment/service/hpa/servicemonitor
+└── docs/
+    └── prerequisites.md       # prérequis à réaliser AVANT l'atelier
 ```
 
-## Integrate with your tools
+---
 
-* [Set up project integrations](https://gitlab.com/karmeni/atelier-kubernetes/-/settings/integrations)
+## Prérequis
 
-## Collaborate with your team
+Détails dans [`docs/prerequisites.md`](docs/prerequisites.md).
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+| Outil   | Où       | Rôle                                   |
+|---------|----------|----------------------------------------|
+| AWS CLI | CloudShell (préinstallé) | Accès au compte sandbox   |
+| kubectl | CloudShell (préinstallé) + local | Piloter Kubernetes |
+| eksctl  | CloudShell (à installer) | Créer le cluster EKS      |
+| helm    | **local** | Écrire / valider le chart (`helm lint`) |
+| git     | local     | Forker / committer                     |
 
-## Test and Deploy
+---
 
-Use the built-in continuous integration in GitLab.
+## Déroulé résumé
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+| Étape | Où | Clé |
+|-------|----|-----|
+| 1. Créer le cluster    | CloudShell | `eksctl create cluster -f cluster.yaml` |
+| 2. Installer ArgoCD    | CloudShell | manifest officiel v3.5.3 |
+| 3. Accès aux UIs       | CloudShell → local | kubeconfig par jeton + `port-forward` local |
+| 4. Application ArgoCD  | CloudShell | `kubectl apply -f application.yaml` (source Helm) |
+| 5. Dashboard K8s (GitOps) | local | `kubectl apply -f dashboard.yaml` (Kubernetes Dashboard + metrics-server → workloads, events, logs, CPU/RAM) |
+| 6. Prometheus (GitOps) | local | `kubectl apply -f monitoring.yaml` (kube-prometheus-stack allégé) |
+| 7. Construire le chart | local + GitHub | écrire `templates/*` (dont `servicemonitor.yaml`), commit → ArgoCD sync |
+| 8. Dynatrace (bonus)   | CloudShell + local | Secret tokens (hors Git) + `kubectl apply -f dynatrace.yaml` |
+| 9. Nettoyer            | CloudShell | `eksctl delete cluster --name atelier-argocd --region us-east-1` |
 
-***
+Le détail complet est dans [`guide.html`](guide.html).
 
-# Editing this README
+---
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+## Points d'attention
 
-## Suggestions for a good README
+- **Sandbox Pluralsight** : régions **`us-east-1`** (utilisée ici) ou `us-west-2` ;
+  EC2 `t2/t3/t3a/t4g` en `micro/small/medium`. Sandbox détruite après ~4h (pas de
+  coût), teardown **optionnel**.
+- **Version EKS** : `1.34` (doit être en « standard support » ; `eksctl` liste les
+  versions valides s'il refuse).
+- **CloudShell — collage multi-lignes** : confirmer via « Safe Paste » (bouton Paste).
+- **CloudShell — pas d'aperçu de port web** : d'où l'accès aux UIs via kubeconfig
+  par jeton, utilisé **en local**.
+- **`repoURL` à personnaliser** dans [`argocd/application.yaml`](argocd/application.yaml)
+  (URL de votre fork).
+- **Version podinfo** : image épinglée `ghcr.io/stefanprodan/podinfo:6.7.1`.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+---
 
-## Name
-Choose a self-explaining name for your project.
+## Valider le chart localement
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+```bash
+echo "=== Lint du chart ==="
+helm lint charts/podinfo
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+echo ""
+echo "=== Rendu du chart (manifests générés) ==="
+helm template podinfo charts/podinfo
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Au départ, `templates/` est vide : `helm template` ne rend rien. À mesure que vous
+ajoutez les templates (étape 7 du guide, « Construire le chart pas à pas »), le rendu
+se remplit.

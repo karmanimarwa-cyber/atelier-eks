@@ -1,0 +1,8 @@
+# Ce dossier accueillera les templates du chart, que VOUS allez écrire pas à pas
+# (étape 7 du guide) :
+#   - deployment.yaml (étape 7.1)
+#   - service.yaml    (étape 7.2)
+#   - hpa.yaml        (étape 7.5)
+#   - servicemonitor.yaml (étape 7.6)
+# Il est volontairement vide au départ. Ce fichier .gitkeep sert juste à
+# conserver le dossier dans Git tant qu'il ne contient pas encore de template.

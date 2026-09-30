@@ -1,0 +1,8 @@
+apiVersion: v2
+name: podinfo
+description: Chart Helm de l'atelier — construit pas à pas par les participants
+type: application
+# Version du chart (incrémentée par les participants au fil des étapes, optionnel).
+version: 0.1.0
+# Version de l'application déployée (image podinfo).
+appVersion: "6.7.1"

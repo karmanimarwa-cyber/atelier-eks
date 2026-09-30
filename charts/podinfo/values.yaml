@@ -1,0 +1,23 @@
+# =============================================================================
+# values.yaml — valeurs du chart podinfo
+# =============================================================================
+# Point de départ MINIMAL. Vous l'enrichirez au fil de l'étape 7 de l'atelier
+# (resources à l'étape 7.1, message/couleur de l'UI à l'étape 7.3, HPA à l'étape 7.5,
+# ServiceMonitor Prometheus à l'étape 7.6).
+#
+# Au départ, seules l'image et le nombre de répliques sont définis.
+# =============================================================================
+
+image:
+  repository: ghcr.io/stefanprodan/podinfo
+  tag: "6.7.1"
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

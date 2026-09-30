@@ -1,0 +1,90 @@
+# =============================================================================
+# Applications ArgoCD - Dynatrace (Operator + DynaKube), EN COMPLÉMENT de Prometheus
+# =============================================================================
+# Deux Applications, ordonnées par sync-wave :
+#   - wave 0 : dynatrace-operator (chart Helm OCI officiel public.ecr.aws/dynatrace)
+#   - wave 10 : dynakube (le CR DynaKube, depuis VOTRE fork → dynatrace/)
+#
+# L'operator installe la CRD DynaKube ; il faut donc l'appliquer AVANT le CR
+# (d'où les waves). Un retry couvre la race condition CRD/CR documentée par
+# Dynatrace.
+#
+# ⚠️  AVANT d'appliquer (voir guide, étape 7.7) :
+#   1) Créer le namespace + le Secret "dynakube" (tokens) en CloudShell.
+#   2) Dans dynatrace/dynakube.yaml, remplacer 'ENVIRONMENTID' par votre tenant.
+#   3) Dans l'Application "dynakube" ci-dessous, remplacer repoURL par VOTRE fork.
+#
+# Appliquer :  kubectl apply -f argocd/dynatrace.yaml
+# =============================================================================
+
+# --- Application 1 : Dynatrace Operator (chart Helm OCI public) --------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dynatrace-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Dépôt Helm OCI officiel Dynatrace (rien à personnaliser).
+    repoURL: public.ecr.aws/dynatrace
+    chart: dynatrace-operator
+    targetRevision: "1.10.2"
+    helm: {}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dynatrace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m
+
+---
+# --- Application 2 : DynaKube CR (depuis VOTRE fork) -------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: dynakube
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # 👇 REMPLACEZ par l'URL de VOTRE fork (comme pour l'Application podinfo).
+    repoURL: https://github.com/<VOTRE-COMPTE>/<VOTRE-REPO>.git
+    targetRevision: main
+    # Dossier contenant le CR DynaKube dans votre dépôt.
+    path: dynatrace
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: dynatrace
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+    retry:
+      # Couvre la race condition : la CRD DynaKube peut mettre quelques secondes
+      # à être prête après l'installation de l'operator.
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

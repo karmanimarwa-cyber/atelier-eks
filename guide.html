@@ -1,0 +1,1185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Atelier GitOps — Construire un chart Helm déployé par ArgoCD sur EKS</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --bg-alt: #161c2c;
+    --panel: #1c2438;
+    --text: #e6e9f0;
+    --muted: #9aa4b8;
+    --accent: #4f8cff;
+    --accent-2: #34d399;
+    --border: #2a3450;
+    --code-bg: #0b0f18;
+    --warn-bg: #3a2a12;
+    --warn-border: #b8791f;
+    --info-bg: #10273a;
+    --info-border: #2f7fb8;
+    --check-bg: #123024;
+    --check-border: #2f9e6b;
+    --hint-bg: #1a2036;
+    --hint-border: #5b6aa0;
+    --sol-bg: #2a1e10;
+    --sol-border: #a06a2f;
+    --sidebar-w: 300px;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* ---------- Layout ---------- */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: var(--sidebar-w);
+    background: var(--bg-alt);
+    border-right: 1px solid var(--border);
+    padding: 24px 18px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .content {
+    flex: 1;
+    padding: 40px 48px 120px;
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .brand { font-size: 1.05rem; font-weight: 700; margin-bottom: 4px; }
+  .brand span { color: var(--accent); }
+  .brand-sub { font-size: .8rem; color: var(--muted); margin-bottom: 20px; }
+  .progress-wrap { margin-bottom: 20px; }
+  .progress-bar {
+    height: 8px; background: var(--panel); border-radius: 6px; overflow: hidden;
+    border: 1px solid var(--border);
+  }
+  .progress-fill {
+    height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    transition: width .3s ease;
+  }
+  .progress-label { font-size: .78rem; color: var(--muted); margin-top: 6px; }
+  nav ol { list-style: none; padding: 0; margin: 0; }
+  nav li { margin: 2px 0; }
+  nav .nav-group { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 14px 0 4px 10px; }
+  nav a {
+    display: flex; align-items: center; gap: 10px;
+    color: var(--muted); text-decoration: none;
+    padding: 8px 10px; border-radius: 8px; font-size: .9rem;
+    transition: background .15s, color .15s;
+  }
+  nav a:hover { background: var(--panel); color: var(--text); }
+  nav a.current { background: var(--panel); color: var(--text); border-left: 3px solid var(--accent-2); }
+  nav a.current .dot { background: var(--accent-2); border-color: var(--accent-2); color: #07120c; }
+  nav a.past { color: #5c6680; opacity: .7; }
+  nav a.past .dot { background: transparent; border-color: #3a4560; }
+  nav a.past .dot::after { content: "✓"; color: #5c6680; font-size: .6rem; }
+  nav a .dot {
+    width: 18px; height: 18px; border-radius: 50%; flex-shrink: 0;
+    border: 2px solid var(--border); display: inline-flex;
+    align-items: center; justify-content: center; font-size: .6rem;
+  }
+  .nav-check {
+    margin-top: 16px; font-size: .78rem; color: var(--muted);
+    border-top: 1px solid var(--border); padding-top: 12px;
+  }
+
+  /* ---------- Content ---------- */
+  h1 { font-size: 1.9rem; margin: 0 0 6px; }
+  h2 { font-size: 1.4rem; margin: 8px 0 14px; padding-top: 8px; }
+  h3 { font-size: 1.1rem; margin: 22px 0 8px; color: var(--text); }
+  h4 { font-size: .98rem; margin: 18px 0 6px; color: var(--accent-2); }
+  .lead { color: var(--muted); font-size: 1.05rem; margin-bottom: 28px; }
+  p { margin: 10px 0; }
+  a { color: var(--accent); }
+  section { border-top: 1px solid var(--border); padding: 30px 0 10px; }
+  section:first-of-type { border-top: none; }
+  .step-badge {
+    display: inline-block; background: var(--panel); color: var(--accent);
+    font-size: .72rem; font-weight: 700; letter-spacing: .05em;
+    padding: 3px 10px; border-radius: 20px; margin-bottom: 8px;
+    text-transform: uppercase; border: 1px solid var(--border);
+  }
+  .time-badge { display: inline-block; margin-left: 8px; color: var(--muted); font-size: .72rem; font-weight: 600; }
+
+  /* ---------- Env badges (CloudShell / Local) ---------- */
+  .env {
+    display: inline-block; font-size: .72rem; font-weight: 700; padding: 2px 8px;
+    border-radius: 6px; margin: 6px 6px 6px 0; border: 1px solid var(--border);
+  }
+  .env.cloud { background: #10273a; color: #7cc0f0; border-color: #2f7fb8; }
+  .env.local { background: #10231a; color: #7ce0a8; border-color: #2f9e6b; }
+
+  /* ---------- Code blocks ---------- */
+  .code { position: relative; background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px; margin: 14px 0; overflow: hidden; }
+  .code pre { margin: 0; padding: 16px 18px; overflow-x: auto; font-family: "SF Mono", "Fira Code", Menlo, Consolas, monospace; font-size: .86rem; line-height: 1.5; color: #d6e0f5; }
+  .copy-btn { position: absolute; top: 8px; right: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: .75rem; cursor: pointer; transition: background .15s, color .15s; }
+  .copy-btn:hover { background: var(--accent); color: #06101f; border-color: var(--accent); }
+  .copy-btn.copied { background: var(--accent-2); color: #07120c; border-color: var(--accent-2); }
+
+  /* ---------- Callouts ---------- */
+  .callout { border-radius: 10px; padding: 14px 18px; margin: 16px 0; border-left: 4px solid; font-size: .95rem; }
+  .callout .c-title { font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .callout.info  { background: var(--info-bg);  border-color: var(--info-border); }
+  .callout.warn  { background: var(--warn-bg);  border-color: var(--warn-border); }
+  .callout.check { background: var(--check-bg); border-color: var(--check-border); }
+  .callout code { background: rgba(255,255,255,.08); padding: 1px 5px; border-radius: 4px; }
+
+  /* ---------- Collapsible (theory + hints) ---------- */
+  details.fold { background: var(--bg-alt); border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; overflow: hidden; }
+  details.fold summary { cursor: pointer; padding: 12px 16px; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 10px; user-select: none; }
+  details.fold summary::-webkit-details-marker { display: none; }
+  details.fold summary::before { content: "▶"; color: var(--accent); font-size: .7rem; transition: transform .2s; }
+  details.fold[open] summary::before { transform: rotate(90deg); }
+  details.fold .fold-body { padding: 0 16px 14px; color: var(--muted); }
+  details.fold .fold-body p { color: var(--muted); }
+
+  /* Indices (hint) et solution : styles distincts anti-spoil */
+  details.hint { border-color: var(--hint-border); }
+  details.hint summary { color: #a9b6e8; }
+  details.solution { border-color: var(--sol-border); background: var(--sol-bg); }
+  details.solution summary { color: #e0b878; }
+
+  /* ---------- Objectif ---------- */
+  .goal { background: #10231a; border: 1px solid #2f9e6b; border-radius: 10px; padding: 12px 16px; margin: 14px 0; }
+  .goal .g-title { font-weight: 700; color: var(--accent-2); margin-bottom: 4px; }
+
+  code.inline { background: var(--panel); padding: 1px 6px; border-radius: 4px; font-size: .85em; }
+  ul.clean { padding-left: 20px; }
+  ul.clean li { margin: 6px 0; }
+
+  /* ---------- Mobile ---------- */
+  .menu-toggle { display: none; }
+  @media (max-width: 900px) {
+    .layout { flex-direction: column; }
+    .sidebar { position: relative; width: 100%; height: auto; top: 0; border-right: none; border-bottom: 1px solid var(--border); }
+    .content { padding: 24px 18px 80px; }
+    .sidebar nav { display: none; }
+    .sidebar nav.open { display: block; }
+    .menu-toggle { display: block; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; cursor: pointer; margin-top: 12px; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">Atelier <span>GitOps</span></div>
+    <div class="brand-sub">Helm + ArgoCD + EKS · construction pas à pas</div>
+
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="progress-label" id="progressLabel">Progression : 0 %</div>
+    </div>
+
+    <button class="menu-toggle" id="menuToggle">☰ Sommaire</button>
+
+    <nav id="nav">
+      <div class="nav-group">Mise en place</div>
+      <ol>
+        <li><a href="#intro" data-step><span class="dot"></span> Introduction</a></li>
+        <li><a href="#prerequis" data-step><span class="dot"></span> 0 · Prérequis &amp; environnements</a></li>
+        <li><a href="#cluster" data-step><span class="dot"></span> 1 · Créer le cluster EKS</a></li>
+        <li><a href="#theorie" data-step><span class="dot"></span> 2 · Théorie (K8s, GitOps, Helm)</a></li>
+        <li><a href="#verif-cluster" data-step><span class="dot"></span> 3 · Vérifier le cluster</a></li>
+        <li><a href="#argocd" data-step><span class="dot"></span> 4 · Installer ArgoCD</a></li>
+        <li><a href="#acces-ui" data-step><span class="dot"></span> 5 · Accès aux UIs (kubeconfig)</a></li>
+      </ol>
+      <div class="nav-group">Construire le chart Helm</div>
+      <ol>
+        <li><a href="#fork" data-step><span class="dot"></span> 6 · Fork &amp; Application ArgoCD</a></li>
+        <li><a href="#build" data-step><span class="dot"></span> 7 · Construire pas à pas</a></li>
+        <li><a href="#teardown" data-step><span class="dot"></span> 8 · Nettoyage</a></li>
+      </ol>
+      <div class="nav-check">🟢 Étape en cours en vert, étapes passées grisées. Suivi automatique.</div>
+    </nav>
+  </aside>
+
+  <main class="content">
+    <h1>Construire un chart Helm, déployé par ArgoCD sur EKS</h1>
+    <p class="lead">Vous allez <strong>écrire vous-même</strong> un chart Helm, composant par composant. À chaque
+    ajout que vous poussez sur Git, ArgoCD met le cluster à jour automatiquement : vous voyez votre application
+    grandir. Objectif : comprendre le <strong>GitOps</strong>, écrire des <strong>manifests Kubernetes</strong> et
+    découvrir <strong>Helm</strong>.</p>
+
+    <div class="callout info">
+      <div class="c-title">🧭 Deux environnements, deux rôles</div>
+      <span class="env cloud">AWS CloudShell</span> pour tout ce qui touche <strong>AWS et le cluster</strong>
+      (créer l'EKS, installer ArgoCD, kubectl). Authentifié sur la sandbox : aucun risque pour un compte
+      d'entreprise.<br>
+      <span class="env local">Poste local (IDE)</span> pour <strong>écrire le code</strong> (le chart Helm),
+      <code>helm lint</code> et <code>git</code>. On n'y lance <strong>jamais</strong> de commande AWS.
+    </div>
+
+    <!-- INTRO -->
+    <section id="intro">
+      <span class="step-badge">Introduction</span>
+      <h2>Ce que vous allez construire</h2>
+      <ul class="clean">
+        <li>Un cluster <strong>EKS</strong> (Kubernetes managé), créé en une commande.</li>
+        <li><strong>ArgoCD</strong> installé dessus : l'agent GitOps.</li>
+        <li>Un <strong>chart Helm podinfo</strong> que <em>vous</em> écrivez pas à pas — Deployment, Service,
+        paramétrage, sondes de santé, autoscaling (HPA).</li>
+      </ul>
+      <div class="callout info">
+        <div class="c-title">⏱️ Pas de course</div>
+        L'atelier n'est pas chronométré au cordeau : si vous ne finissez pas en séance, le guide est
+        <strong>autonome</strong> — vous pourrez terminer chez vous. Des <strong>indices</strong> repliés vous
+        aident à chaque étape d'écriture (à n'ouvrir qu'en cas de blocage).
+      </div>
+    </section>
+
+    <!-- PREREQUIS -->
+    <section id="prerequis">
+      <span class="step-badge">Étape 0</span>
+      <h2>Prérequis &amp; environnements</h2>
+      <p>L'atelier tourne dans la <strong>sandbox AWS Pluralsight</strong>
+      (<a href="https://app.pluralsight.com/hands-on" target="_blank">Hands-on Playground</a>).</p>
+
+      <h3><span class="env cloud">CloudShell</span> — l'environnement AWS</h3>
+      <p>Ouvrez <strong>AWS CloudShell</strong> depuis la console de la sandbox (icône terminal en haut, région
+      <code class="inline">us-east-1</code>). Il est déjà authentifié sur la sandbox. Vérifiez :</p>
+      <div class="code">
+<pre>echo "=== Identité AWS (doit contenir cloud_user) ==="
+aws sts get-caller-identity --query 'Arn' --output text</pre>
+      </div>
+      <div class="callout check">
+        <div class="c-title">✅ Checkpoint</div>
+        L'ARN contient <code>cloud_user</code>. C'est le compte de la sandbox — impossible d'y toucher un compte
+        d'entreprise.
+      </div>
+      <p><code class="inline">aws</code>, <code class="inline">kubectl</code> et <code class="inline">git</code>
+      sont déjà présents dans CloudShell. Il ne manque que <code class="inline">eksctl</code> :</p>
+      <div class="code">
+<pre>echo "=== Installer eksctl ==="
+ARCH=amd64; PLATFORM=$(uname -s)_$ARCH
+curl -sLO "https://github.com/eksctl-io/eksctl/releases/latest/download/eksctl_$PLATFORM.tar.gz"
+tar -xzf eksctl_$PLATFORM.tar.gz -C /tmp && rm eksctl_$PLATFORM.tar.gz
+sudo install -m 0755 /tmp/eksctl /usr/local/bin && rm /tmp/eksctl
+eksctl version</pre>
+      </div>
+      <div class="callout warn">
+        <div class="c-title">⚠️ CloudShell : collage multi-lignes</div>
+        Quand vous collez un bloc de plusieurs lignes, CloudShell affiche « Safe Paste » : cliquez sur
+        <strong>Paste</strong> pour confirmer. (Vous pouvez décocher « Ask before pasting » pour ne plus être
+        sollicité.)
+      </div>
+
+      <h3><span class="env local">Poste local</span> — l'environnement de code</h3>
+      <p>Sur votre poste, prévoyez un <strong>IDE</strong> (VS Code…), <code class="inline">git</code>, et
+      <code class="inline">helm</code> (pour valider le chart avant de pousser). Un compte <strong>GitHub</strong>
+      est nécessaire (fork + édition web).</p>
+      <div class="code">
+<pre>echo "=== Vérifier les outils locaux ==="
+helm version
+git --version</pre>
+      </div>
+    </section>
+
+    <!-- CLUSTER -->
+    <section id="cluster">
+      <span class="step-badge">Étape 1</span><span class="time-badge">CloudShell · ~15-20 min</span>
+      <h2>Créer le cluster EKS</h2>
+      <p><span class="env cloud">CloudShell</span> On lance la création tout de suite (elle prend 15-20 min),
+      puis on enchaîne sur la théorie pendant que ça provisionne.</p>
+
+      <h4>1. Poser le fichier <code>cluster.yaml</code></h4>
+      <div class="code">
+<pre>cat &gt; cluster.yaml &lt;&lt;'EOF'
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: atelier-argocd
+  region: us-east-1
+  version: "1.34"
+managedNodeGroups:
+  - name: ng-atelier
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 2
+    maxSize: 2
+    volumeSize: 20
+    ssh:
+      allow: false
+EOF
+cat cluster.yaml</pre>
+      </div>
+      <div class="callout warn">
+        <div class="c-title">⚠️ Version EKS</div>
+        La version doit être en « standard support ». Si <code>eksctl</code> refuse <code>1.34</code>, il affiche
+        les versions valides du jour — reprenez-en une (ex. 1.33 si encore supportée, sinon la plus récente proposée).
+      </div>
+
+      <h4>2. Lancer la création</h4>
+      <div class="code">
+<pre>eksctl create cluster -f cluster.yaml</pre>
+      </div>
+      <div class="callout info">
+        <div class="c-title">💡 Si CloudShell se déconnecte</div>
+        La création continue côté AWS (CloudFormation). Rouvrez CloudShell, recollez le bloc
+        <code>cluster.yaml</code>, puis <code>aws eks update-kubeconfig --name atelier-argocd --region us-east-1</code>.
+      </div>
+    </section>
+
+    <!-- THEORIE -->
+    <section id="theorie">
+      <span class="step-badge">Étape 2</span><span class="time-badge">pendant la création</span>
+      <h2>Théorie : Kubernetes, GitOps, Helm</h2>
+      <details class="fold">
+        <summary>Kubernetes en 2 minutes</summary>
+        <div class="fold-body">
+          <p>Kubernetes orchestre des conteneurs à partir d'un <strong>état souhaité</strong> décrit en YAML.
+          Objets clés : <strong>Pod</strong> (conteneur(s)), <strong>Deployment</strong> (répliques + mises à
+          jour), <strong>Service</strong> (adresse stable), <strong>Namespace</strong> (cloisonnement).</p>
+        </div>
+      </details>
+      <details class="fold">
+        <summary>GitOps &amp; ArgoCD</summary>
+        <div class="fold-body">
+          <p>Le <strong>GitOps</strong> fait de Git la source de vérité : un agent (ArgoCD) réconcilie en continu
+          le cluster avec un dépôt. Vous committez → ArgoCD synchronise. Retour arrière = <code>git revert</code>.</p>
+        </div>
+      </details>
+      <details class="fold">
+        <summary>Helm : le gestionnaire de paquets Kubernetes</summary>
+        <div class="fold-body">
+          <p>Un <strong>chart</strong> Helm est un paquet de manifests <em>templatés</em>. Structure :</p>
+          <ul class="clean">
+            <li><code>Chart.yaml</code> : métadonnées (nom, version).</li>
+            <li><code>values.yaml</code> : les <strong>valeurs</strong> (paramètres) par défaut.</li>
+            <li><code>templates/</code> : les manifests, où l'on injecte les valeurs avec
+            <code>{{ .Values.xxx }}</code>.</li>
+          </ul>
+          <p>Intérêt : un même chart, des valeurs différentes → pas de copier-coller de YAML.</p>
+        </div>
+      </details>
+    </section>
+
+    <!-- VERIF CLUSTER -->
+    <section id="verif-cluster">
+      <span class="step-badge">Étape 3</span><span class="time-badge">CloudShell</span>
+      <h2>Vérifier le cluster</h2>
+      <div class="code">
+<pre>kubectl config current-context
+kubectl get nodes</pre>
+      </div>
+      <div class="callout check">
+        <div class="c-title">✅ Checkpoint</div>
+        <code>kubectl get nodes</code> liste <strong>2 nœuds</strong> à l'état <code>Ready</code>.
+      </div>
+    </section>
+
+    <!-- ARGOCD -->
+    <section id="argocd">
+      <span class="step-badge">Étape 4</span><span class="time-badge">CloudShell</span>
+      <h2>Installer ArgoCD</h2>
+      <div class="code">
+<pre>kubectl create namespace argocd
+kubectl apply -n argocd --server-side --force-conflicts \
+  -f https://raw.githubusercontent.com/argoproj/argo-cd/v3.5.3/manifests/install.yaml</pre>
+      </div>
+      <div class="code">
+<pre>echo "=== Attendre que le serveur soit prêt ==="
+kubectl wait --for=condition=available --timeout=300s \
+  -n argocd deployment/argocd-server</pre>
+      </div>
+      <div class="callout check">
+        <div class="c-title">✅ Checkpoint</div>
+        <code>deployment.apps/argocd-server condition met</code>. ArgoCD est installé.
+      </div>
+    </section>
+
+    <!-- ACCES UI -->
+    <section id="acces-ui">
+      <span class="step-badge">Étape 5</span><span class="time-badge">CloudShell → local</span>
+      <h2>Accéder aux interfaces (ArgoCD &amp; podinfo)</h2>
+      <p>CloudShell ne permet pas d'ouvrir un port dans le navigateur. On génère donc, dans CloudShell, un
+      <strong>kubeconfig portable</strong> (authentifié par un jeton, sans AWS), qu'on utilise <strong>en
+      local</strong> pour faire les <code class="inline">port-forward</code> et ouvrir les UIs.</p>
+
+      <h4><span class="env cloud">CloudShell</span> — créer le jeton d'accès</h4>
+      <div class="code">
+<pre>echo "=== ServiceAccount + droits (TP éphémère : droits larges) ==="
+kubectl -n argocd create serviceaccount atelier-viewer
+kubectl create clusterrolebinding atelier-viewer \
+  --clusterrole=cluster-admin \
+  --serviceaccount=argocd:atelier-viewer</pre>
+      </div>
+      <p><strong>1)</strong> D'abord, récupérer les trois valeurs (serveur, certificat, jeton) dans des variables :</p>
+      <div class="code">
+<pre>echo "=== Recuperer serveur, certificat et jeton (24h, sans AWS) ==="
+SERVER=$(kubectl config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+CA=$(kubectl config view --minify --flatten -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
+TOKEN=$(kubectl -n argocd create token atelier-viewer --duration=24h)
+
+echo "SERVER  = $SERVER"
+echo "CA      = ${#CA} caracteres"
+echo "TOKEN   = ${#TOKEN} caracteres"</pre>
+      </div>
+      <div class="callout warn">
+        <div class="c-title">⚠️ Vérifiez avant de continuer</div>
+        Les trois lignes <code>echo</code> doivent afficher un <code>SERVER</code> en <code>https://…eks.amazonaws.com</code>
+        et des longueurs <strong>non nulles</strong> pour <code>CA</code> et <code>TOKEN</code>. Si l'une est vide,
+        relancez la commande correspondante avant de passer à la suite.
+      </div>
+
+      <p><strong>2)</strong> Ensuite, générer le fichier kubeconfig. <strong>Collez ce bloc seul</strong> (sa
+      première ligne <code>cat &gt; atelier-kubeconfig.yaml &lt;&lt;EOF</code> ne doit rien avoir avant elle) :</p>
+      <div class="code">
+<pre>cat &gt; atelier-kubeconfig.yaml &lt;&lt;EOF
+apiVersion: v1
+kind: Config
+clusters:
+- name: atelier-argocd
+  cluster:
+    server: $SERVER
+    certificate-authority-data: $CA
+contexts:
+- name: atelier
+  context:
+    cluster: atelier-argocd
+    user: atelier-viewer
+    namespace: argocd
+current-context: atelier
+users:
+- name: atelier-viewer
+  user:
+    token: $TOKEN
+EOF
+echo "Fichier atelier-kubeconfig.yaml cree."</pre>
+      </div>
+      <div class="callout warn">
+        <div class="c-title">⚠️ Collage du heredoc (Safe Paste)</div>
+        Confirmez le « Safe Paste » (bouton Paste). <strong>Après le collage, regardez la première ligne dans
+        l'invite :</strong> elle doit se terminer par <code>&lt;&lt;EOF</code>. Si elle s'arrête à <code>&lt;</code>
+        (le <code>&lt;&lt;EOF</code> a été coupé), faites <code>Ctrl+C</code> et recollez uniquement ce bloc.
+        Le heredoc utilise <code>&lt;&lt;EOF</code> <em>sans</em> quotes pour que <code>$SERVER</code>,
+        <code>$CA</code>, <code>$TOKEN</code> soient remplacés par leurs valeurs.
+      </div>
+
+      <p><strong>3)</strong> Vérifier que le fichier contient bien les vraies valeurs (et pas <code>$SERVER</code>) :</p>
+      <div class="code">
+<pre>echo "=== Verification du kubeconfig genere ==="
+head -12 atelier-kubeconfig.yaml</pre>
+      </div>
+
+      <h4><span class="env cloud">CloudShell</span> — télécharger le fichier</h4>
+      <p>Menu <strong>Actions → Download file</strong>, saisissez <code class="inline">atelier-kubeconfig.yaml</code>.</p>
+
+      <h4><span class="env local">Poste local</span> — utiliser le kubeconfig (sans AWS)</h4>
+      <p>Placez le fichier dans un dossier local (ex. <code class="inline">.local/</code> du dépôt, ignoré par
+      git). Puis, dans le terminal local :</p>
+      <div class="code">
+<pre>export KUBECONFIG=.local/atelier-kubeconfig.yaml
+kubectl get nodes</pre>
+      </div>
+      <div class="callout check">
+        <div class="c-title">✅ Checkpoint</div>
+        <code>get nodes</code> renvoie les 2 nœuds — <strong>depuis votre poste, sans commande AWS</strong>.
+        <code>export KUBECONFIG</code> n'affecte pas votre <code>~/.kube/config</code> habituel.
+      </div>
+      <h4><span class="env local">Poste local</span> — ouvrir l'UI ArgoCD</h4>
+      <p><strong>Identifiants de connexion à l'UI ArgoCD :</strong></p>
+      <ul class="clean">
+        <li><strong>Utilisateur</strong> : <code>admin</code> — c'est le compte administrateur créé par défaut
+        à l'installation d'ArgoCD (rien à récupérer, c'est toujours <code>admin</code>).</li>
+        <li><strong>Mot de passe</strong> : généré automatiquement, stocké dans le secret
+        <code>argocd-initial-admin-secret</code>. Récupérez-le (en local, le kubeconfig est chargé) :</li>
+      </ul>
+      <div class="code">
+<pre>echo "=== Mot de passe admin ArgoCD (utilisateur : admin) ==="
+kubectl -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath="{.data.password}" | base64 -d ; echo ""</pre>
+      </div>
+      <div class="callout info">
+        <div class="c-title">💡 Notez ce mot de passe</div>
+        Copiez-le : vous en aurez besoin pour vous connecter juste après. Ne le partagez pas.
+      </div>
+      <p>Ouvrez ensuite le tunnel vers l'UI (laissez-le tourner) :</p>
+      <div class="code">
+<pre>kubectl port-forward svc/argocd-server -n argocd 8080:443</pre>
+      </div>
+      <p>Ouvrez <a href="https://localhost:8080" target="_blank">https://localhost:8080</a> (acceptez
+      l'avertissement de certificat auto-signé) et connectez-vous avec <code>admin</code> + le mot de passe
+      ci-dessus. Laissez le tunnel tourner ; ouvrez un 2ᵉ terminal pour la suite (avec
+      <code>export KUBECONFIG</code> à nouveau).</p>
+    </section>
+
+    <!-- FORK -->
+    <section id="fork">
+      <span class="step-badge">Étape 6</span><span class="time-badge">local + GitHub</span>
+      <h2>Fork &amp; Application ArgoCD</h2>
+      <p>ArgoCD déploie un chart Helm depuis un dépôt Git. Vous allez <strong>forker</strong> le dépôt de
+      l'atelier, puis déclarer une <strong>Application</strong> qui pointe vers <code class="inline">charts/podinfo</code>
+      de votre fork.</p>
+
+      <h4>Forker</h4>
+      <p>Sur GitHub, cliquez <strong>Fork</strong>. Notez l'URL de votre fork
+      (<code class="inline">https://github.com/&lt;VOTRE-COMPTE&gt;/&lt;VOTRE-REPO&gt;.git</code>, visible via le
+      bouton <strong>Code</strong> → onglet HTTPS de votre fork). Le dépôt contient déjà un
+      <strong>squelette</strong> de chart : <code class="inline">charts/podinfo/Chart.yaml</code>,
+      <code class="inline">values.yaml</code>, et un dossier <code class="inline">templates/</code> <strong>vide</strong>
+      — c'est vous qui le remplirez.</p>
+
+      <h4><span class="env local">Poste local</span> — déclarer l'Application</h4>
+      <p>Votre fork contient déjà le fichier <code class="inline">argocd/application.yaml</code>. Ouvrez-le dans
+      votre IDE et remplacez la ligne <code class="inline">repoURL</code> par l'URL de <strong>votre</strong>
+      fork :</p>
+      <div class="callout warn">
+        <div class="c-title">⚠️ Remplacez l'URL du dépôt</div>
+        Dans <code>argocd/application.yaml</code>, remplacez <strong>toute l'URL</strong> <code>repoURL</code>
+        par celle de <strong>votre fork</strong> (compte ET nom de repo peuvent différer), puis enregistrez.
+      </div>
+      <p>Appliquez ensuite l'Application (le kubeconfig est chargé depuis l'étape 5, donc <strong>en local</strong>,
+      sans AWS) :</p>
+      <div class="code">
+<pre>export KUBECONFIG=.local/atelier-kubeconfig.yaml
+kubectl apply -f argocd/application.yaml
+kubectl -n argocd get applications</pre>
+      </div>
+      <div class="callout check">
+        <div class="c-title">✅ Checkpoint</div>
+        L'application <code>podinfo</code> apparaît en <code>Synced</code> / <code>Healthy</code>, mais
+        <strong>rien n'est déployé</strong> : le dossier <code>templates/</code> est vide, donc Helm ne rend
+        aucun manifest. Le namespace <code>podinfo</code> n'est pas encore créé — il le sera au
+        <strong>premier template</strong> ajouté (étape 7). C'est normal.
+        Rafraîchissez l'<strong>UI ArgoCD</strong> (le tunnel de l'étape 5, <a href="https://localhost:8080" target="_blank">https://localhost:8080</a>)
+        pour voir apparaître l'application.
+      </div>
+
+      <h4><span class="env local">Poste local</span> — déclarer l'Application Kubernetes Dashboard (+ metrics-server)</h4>
+      <p>Avant Prometheus, on ajoute une Application ArgoCD qui déploie le
+      <strong>Kubernetes Dashboard</strong> : l'UI web officielle qui donne une vue complète du cluster.
+      On y consulte, sans quitter le navigateur :</p>
+      <ul>
+        <li><strong>Workloads</strong> : Deployments, ReplicaSets, StatefulSets, DaemonSets, Jobs/CronJobs, et
+        l'état des <strong>Pods</strong> (Running / Pending / CrashLoopBackOff, nombre de <strong>redémarrages</strong>,
+        nœud d'affectation, âge).</li>
+        <li><strong>Métriques CPU / RAM</strong> par nœud, namespace, pod et conteneur (graphiques d'évolution) —
+        grâce au metrics-server.</li>
+        <li><strong>Events</strong> : idéal pour diagnostiquer un pod bloqué (<code class="inline">ImagePullBackOff</code>,
+        <code class="inline">OOMKilled</code>, échec de probe readiness/liveness…).</li>
+        <li><strong>Logs</strong> et <strong>exec (shell)</strong> dans un conteneur, directement depuis l'UI.</li>
+        <li><strong>Config</strong> (ConfigMaps, Secrets — contenu masqué, variables d'environnement injectées),
+        <strong>réseau</strong> (Services, Endpoints, Ingress) et <strong>stockage</strong> (PVC/PV, StorageClasses).</li>
+      </ul>
+      <p>L'Application installe aussi le <strong>metrics-server</strong> (l'API
+      <code class="inline">metrics.k8s.io</code>) qui alimente les graphiques CPU/RAM. Le reste des informations
+      (workloads, events, logs…) provient directement de l'API Kubernetes, sans metrics-server.</p>
+      <div class="callout info">
+        <div class="c-title">💡 Utile pour l'atelier</div>
+        Pendant l'étape 7, gardez le Dashboard ouvert : vous verrez <strong>podinfo se construire</strong> au fil
+        des commits — le Deployment apparaître, le Pod passer <code>Running</code>, ses logs et ses probes, puis le
+        <strong>HPA scaler</strong> selon la charge CPU.
+      </div>
+      <div class="callout info">
+        <div class="c-title">💡 Pourquoi metrics-server ?</div>
+        EKS n'installe <strong>pas</strong> le metrics-server par défaut. Sans lui, le Dashboard s'affiche (workloads,
+        events, logs…) mais les graphiques <strong>CPU/RAM restent vides</strong> (et <code>kubectl top</code> ne
+        fonctionne pas). Le fichier <code>argocd/dashboard.yaml</code> déploie les deux, ordonnés par
+        <em>sync-wave</em> (metrics-server d'abord, Dashboard ensuite).
+      </div>
+      <div class="callout info">
+        <div class="c-title">💡 Dépôts publics — rien à personnaliser</div>
+        Comme l'Application <code>monitoring</code>, cette Application pointe vers des <strong>dépôts Helm
+        publics</strong> — <strong>rien à personnaliser</strong> dans <code>argocd/dashboard.yaml</code>.
+      </div>
+      <p>Le fichier <code class="inline">argocd/dashboard.yaml</code> est déjà dans votre fork. Appliquez-le :</p>
+      <div class="code">
+<pre>export KUBECONFIG=.local/atelier-kubeconfig.yaml
+kubectl apply -f argocd/dashboard.yaml
+kubectl -n argocd get applications</pre>
+      </div>
+      <p>Une fois les applications <code>Synced</code> / <code>Healthy</code>, ouvrez le Dashboard via un
+      <strong>port-forward</strong> (approche cohérente avec le tunnel de l'étape 5). Le Dashboard v7 s'expose via
+      le proxy Kong sur le port <code>443</code> (HTTPS) :</p>
+      <div class="code">
+<pre>export KUBECONFIG=.local/atelier-kubeconfig.yaml
+kubectl -n kubernetes-dashboard port-forward svc/kubernetes-dashboard-kong-proxy 8443:443</pre>
+      </div>
+      <p>Puis ouvrez <a href="https://localhost:8443" target="_blank">https://localhost:8443</a>
+      (acceptez l'avertissement de certificat auto-signé). Le Dashboard demande un
+      <strong>token</strong> : créez un compte de service admin (pour l'atelier) et générez un token éphémère :</p>
+      <div class="code">
+<pre>export KUBECONFIG=.local/atelier-kubeconfig.yaml
+
+# Compte de service + droits admin (contexte atelier uniquement)
+kubectl create serviceaccount dashboard-admin -n kubernetes-dashboard
+kubectl create clusterrolebinding dashboard-admin \
+  --clusterrole=cluster-admin \
+  --serviceaccount=kubernetes-dashboard:dashboard-admin
+
+# Générer un token (valable ~1h) à coller dans l'UI
+kubectl -n kubernetes-dashboard create token dashboard-admin</pre>
+      </div>
+      <div class="callout warn">
+        <div class="c-title">⚠️ Droits admin — contexte atelier</div>
+        Le rôle <code>cluster-admin</code> donne un accès complet. C'est acceptable dans la
+        <strong>sandbox jetable</strong> de l'atelier, mais <strong>à éviter</strong> sur un vrai cluster : on y
+        créerait un rôle restreint (lecture seule, namespace ciblé).
+      </div>
+      <div class="callout check">
+        <div class="c-title">✅ Checkpoint</div>
+        Les applications <code>metrics-server</code> et <code>kubernetes-dashboard</code> sont
+        <code>Synced</code> / <code>Healthy</code>. Dans l'UI, explorez :
+        <ul>
+          <li><em>Workloads → Pods</em> : statut, redémarrages, et après ~1 min (collecte metrics-server) les
+          graphiques <strong>CPU / mémoire</strong>.</li>
+          <li><em>Cluster → Nodes</em> : utilisation CPU/RAM par nœud.</li>
+          <li>Ouvrez un pod → onglets <strong>Logs</strong> et <strong>Events</strong>.</li>
+        </ul>
+        En ligne de commande, <code>kubectl top nodes</code> et <code>kubectl top pods -A</code> renvoient aussi
+        des valeurs.
+      </div>
+
+      <h4><span class="env local">Poste local</span> — déclarer l'Application Prometheus (monitoring)</h4>
+      <p>On ajoute une <strong>seconde Application</strong> ArgoCD qui déploie <strong>Prometheus</strong>
+      (<code class="inline">kube-prometheus-stack</code>, profil <strong>allégé, sans Alertmanager</strong>)
+      depuis le dépôt Helm <strong>public</strong> de la communauté Prometheus. Elle servira à collecter les
+      métriques du cluster et de podinfo (étape 7.6).</p>
+      <div class="callout info">
+        <div class="c-title">💡 Deux sources différentes</div>
+        L'Application <code>podinfo</code> pointe vers <strong>votre fork</strong> (chart que vous écrivez).
+        L'Application <code>monitoring</code> pointe vers un <strong>dépôt Helm public</strong> — <strong>rien à
+        personnaliser</strong> dans <code>argocd/monitoring.yaml</code>.
+      </div>
+      <p>Le fichier <code class="inline">argocd/monitoring.yaml</code> est déjà dans votre fork. Appliquez-le :</p>
+      <div class="code">
+<pre>export KUBECONFIG=.local/atelier-kubeconfig.yaml
+kubectl apply -f argocd/monitoring.yaml
+kubectl -n argocd get applications</pre>
+      </div>
+      <div class="callout warn">
+        <div class="c-title">⚠️ Première synchro un peu longue</div>
+        <code>kube-prometheus-stack</code> installe des <strong>CRDs</strong> et plusieurs composants
+        (operator, Prometheus, node-exporter, kube-state-metrics). La 1ʳᵉ synchro peut prendre quelques minutes et
+        passer transitoirement par <code>Progressing</code> / <code>OutOfSync</code> — c'est normal. L'option
+        <code>ServerSideApply=true</code> (déjà dans le fichier) évite l'erreur « annotation too long » due aux
+        CRDs volumineuses.
+      </div>
+      <div class="callout check">
+        <div class="c-title">✅ Checkpoint</div>
+        L'application <code>monitoring</code> finit en <code>Synced</code> / <code>Healthy</code>.
+        <code>kubectl get pods -n monitoring</code> montre les pods Prometheus (operator, prometheus, exporters)
+        en <code>Running</code>.
+      </div>
+    </section>
+
+    <!-- BUILD -->
+    <section id="build">
+      <span class="step-badge">Étape 7</span><span class="time-badge">local + GitHub · le cœur du TP</span>
+      <h2>Construire le chart pas à pas</h2>
+      <p>Pour chaque composant : vous <strong>écrivez le fichier</strong> dans votre IDE, validez avec
+      <code class="inline">helm lint charts/podinfo</code>, visualisez le YAML généré avec
+      <code class="inline">helm template podinfo charts/podinfo</code>, puis <strong>committez</strong>
+      (IDE ou interface web GitHub). ArgoCD synchronise et vous observez le résultat
+      (UI ArgoCD + <code class="inline">kubectl</code>).</p>
+      <div class="callout info">
+        <div class="c-title">🔎 <code>lint</code> vs <code>template</code></div>
+        <code>helm lint</code> vérifie la <strong>structure</strong> du chart (erreurs de syntaxe, valeurs
+        manquantes). <code>helm template</code> affiche le <strong>YAML final</strong> (valeurs substituées),
+        exactement ce qu'ArgoCD appliquera — pratique pour vérifier qu'il ne reste aucun <code>{{ … }}</code>
+        non résolu avant de committer.
+      </div>
+
+      <div class="callout warn">
+        <div class="c-title">🙈 Indices repliés — anti-spoil</div>
+        Cherchez d'abord par vous-même. N'ouvrez un <strong>indice</strong> que si vous bloquez, et la
+        <strong>solution</strong> qu'en dernier recours (ou pour vérifier). Tout est fermé par défaut.
+      </div>
+
+      <h3>7.1 — Le Deployment (<code>templates/deployment.yaml</code>)</h3>
+      <div class="goal">
+        <div class="g-title">🎯 Objectif</div>
+        Créer <code>charts/podinfo/templates/deployment.yaml</code> : un Deployment de
+        <code>{{ .Values.replicaCount }}</code> réplique(s) de l'image podinfo (paramétrée via
+        <code>values.yaml</code>), exposant le port <code>9898</code>, avec des <strong>requests CPU</strong>
+        (nécessaires plus tard pour le HPA).
+      </div>
+      <details class="fold hint"><summary>💡 Indice 1 — par où commencer</summary>
+        <div class="fold-body"><p>Un Deployment standard : <code>apiVersion: apps/v1</code>, <code>kind: Deployment</code>,
+        un <code>selector</code> et un <code>template</code> de pod avec un conteneur. Le nombre de répliques vient
+        de <code>{{ .Values.replicaCount }}</code>.</p></div>
+      </details>
+      <details class="fold hint"><summary>💡 Indice 2 — la syntaxe Helm clé</summary>
+        <div class="fold-body"><p>Pour l'image :
+        <code>image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"</code>. Pour les ressources :
+        <code>cpu: {{ .Values.resources.requests.cpu }}</code>. Le port container est <code>9898</code>
+        (nommez-le <code>http</code>).</p></div>
+      </details>
+      <details class="fold solution"><summary>✅ Solution complète</summary>
+        <div class="fold-body">
+      <div class="code">
+<pre>apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: podinfo
+  labels:
+    app: podinfo
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: podinfo
+  template:
+    metadata:
+      labels:
+        app: podinfo
+    spec:
+      containers:
+        - name: podinfo
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 9898
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu }}
+              memory: {{ .Values.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.resources.limits.cpu }}
+              memory: {{ .Values.resources.limits.memory }}</pre>
+      </div>
+      <p>Ajoutez les valeurs manquantes dans <code>values.yaml</code> :</p>
+      <div class="code">
+<pre>resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi</pre>
+      </div>
+        </div>
+      </details>
+      <div class="callout check">
+        <div class="c-title">✅ Après commit</div>
+        Dans l'UI ArgoCD, un <strong>Deployment</strong> et un <strong>Pod</strong> podinfo apparaissent
+        (<code>kubectl get pods -n podinfo</code> le confirme).
+      </div>
+
+      <h3>7.2 — Le Service (<code>templates/service.yaml</code>)</h3>
+      <div class="goal">
+        <div class="g-title">🎯 Objectif</div>
+        Exposer podinfo dans le cluster via un <strong>Service ClusterIP</strong> sur le port <code>9898</code>.
+      </div>
+      <details class="fold hint"><summary>💡 Indice 1 — par où commencer</summary>
+        <div class="fold-body"><p><code>kind: Service</code>, <code>type: ClusterIP</code>, un <code>selector</code>
+        qui cible <code>app: podinfo</code>.</p></div>
+      </details>
+      <details class="fold hint"><summary>💡 Indice 2 — le port</summary>
+        <div class="fold-body"><p><code>port: 9898</code> et <code>targetPort: http</code> (le nom du port défini
+        dans le Deployment).</p></div>
+      </details>
+      <details class="fold solution"><summary>✅ Solution complète</summary>
+        <div class="fold-body">
+      <div class="code">
+<pre>apiVersion: v1
+kind: Service
+metadata:
+  name: podinfo
+  labels:
+    app: podinfo
+spec:
+  type: ClusterIP
+  selector:
+    app: podinfo
+  ports:
+    - name: http
+      port: 9898
+      targetPort: http</pre>
+      </div>
+        </div>
+      </details>
+      <div class="callout check">
+        <div class="c-title">✅ Après commit</div>
+        <span class="env local">local</span> <code>kubectl port-forward svc/podinfo -n podinfo 9898:9898</code>,
+        puis <a href="http://localhost:9898" target="_blank">http://localhost:9898</a> : l'UI podinfo s'affiche.
+      </div>
+
+      <h3>7.3 — Paramétrer l'UI (message &amp; couleur)</h3>
+      <div class="goal">
+        <div class="g-title">🎯 Objectif</div>
+        Rendre le <strong>message</strong> et la <strong>couleur</strong> de l'UI configurables via
+        <code>values.yaml</code>, injectés en variables d'environnement dans le Deployment. C'est le cœur de Helm.
+        <br><br>
+        💡 podinfo est une <em>12-factor app</em> : ses options se configurent par <strong>variables
+        d'environnement</strong>. La liste des paramètres (dont <code>ui.message</code> et <code>ui.color</code>)
+        est documentée dans le
+        <a href="https://github.com/stefanprodan/podinfo/blob/master/charts/podinfo/README.md" target="_blank">README
+        du chart podinfo officiel</a>.
+      </div>
+      <details class="fold hint"><summary>💡 Indice 1 — côté values</summary>
+        <div class="fold-body"><p>Ajoutez dans <code>values.yaml</code> un bloc <code>ui:</code> avec deux
+        clés pour le message et la couleur. Les noms exacts et leurs valeurs par défaut sont dans le tableau
+        « Configuration » du
+        <a href="https://github.com/stefanprodan/podinfo/blob/master/charts/podinfo/README.md" target="_blank">README
+        du chart podinfo</a> (cherchez <code>ui.message</code> et <code>ui.color</code>).</p></div>
+      </details>
+      <details class="fold hint"><summary>💡 Indice 2 — côté deployment</summary>
+        <div class="fold-body"><p>Avec <em>viper</em> (la lib de config de podinfo), chaque option <code>--xxx-yyy</code>
+        se pilote aussi par la variable d'environnement <code>PODINFO_XXX_YYY</code> (majuscules, préfixe
+        <code>PODINFO_</code>, tirets → underscores). Déduisez-en les deux variables pour le message et la couleur,
+        puis ajoutez un bloc <code>env:</code> au conteneur, valorisé par <code>{{ .Values.ui.message }}</code> /
+        <code>{{ .Values.ui.color }}</code>.</p></div>
+      </details>
+      <details class="fold solution"><summary>✅ Solution complète</summary>
+        <div class="fold-body">
+      <p><code>values.yaml</code> — ajoutez :</p>
+      <div class="code">
+<pre>ui:
+  message: "Bienvenue a l'atelier GitOps !"
+  color: "#d97706"</pre>
+      </div>
+      <p><code>templates/deployment.yaml</code> — ajoutez sous le conteneur (après <code>ports:</code>) :</p>
+      <div class="code">
+<pre>          env:
+            - name: PODINFO_UI_MESSAGE
+              value: "{{ .Values.ui.message }}"
+            - name: PODINFO_UI_COLOR
+              value: "{{ .Values.ui.color }}"</pre>
+      </div>
+        </div>
+      </details>
+      <div class="callout check">
+        <div class="c-title">✅ Après commit — moment GitOps</div>
+        Rafraîchissez podinfo : le message/couleur changent. Modifiez <code>values.yaml</code>, committez, et
+        regardez ArgoCD resynchroniser puis l'UI se mettre à jour. <strong>Vous n'avez touché qu'à Git.</strong>
+      </div>
+
+      <h3>7.4 — Sondes de santé (readiness &amp; liveness)</h3>
+      <div class="goal">
+        <div class="g-title">🎯 Objectif</div>
+        Ajouter des sondes <code>livenessProbe</code> et <code>readinessProbe</code> au conteneur pour que
+        Kubernetes gère proprement la santé du pod.
+      </div>
+      <details class="fold hint"><summary>💡 Indice 1 — les endpoints</summary>
+        <div class="fold-body"><p>podinfo expose deux routes HTTP dédiées aux sondes Kubernetes (une pour la
+        <em>liveness</em>, une pour la <em>readiness</em>). Leurs chemins sont listés dans la section
+        « Web API » du
+        <a href="https://github.com/stefanprodan/podinfo#web-api" target="_blank">README podinfo</a>
+        (cherchez « liveness probe » et « readiness probe »). Elles répondent sur le port <code>http</code>.</p></div>
+      </details>
+      <details class="fold hint"><summary>💡 Indice 2 — la forme</summary>
+        <div class="fold-body"><p>Chaque probe est un <code>httpGet</code> avec <code>path</code> et
+        <code>port: http</code>, plus <code>initialDelaySeconds</code> / <code>periodSeconds</code>.</p></div>
+      </details>
+      <details class="fold solution"><summary>✅ Solution complète</summary>
+        <div class="fold-body">
+      <p><code>templates/deployment.yaml</code> — ajoutez au conteneur :</p>
+      <div class="code">
+<pre>          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10</pre>
+      </div>
+        </div>
+      </details>
+      <div class="callout check">
+        <div class="c-title">✅ Après commit</div>
+        <code>kubectl describe pod -n podinfo …</code> montre les probes. Le pod reste <code>Ready</code>.
+      </div>
+
+      <h3>7.5 — Autoscaling (HPA)</h3>
+      <div class="goal">
+        <div class="g-title">🎯 Objectif</div>
+        Ajouter un <strong>HorizontalPodAutoscaler</strong> qui ajuste le nombre de pods (1 à 5) selon le CPU.
+        Créez <code>templates/hpa.yaml</code> et les valeurs <code>hpa</code> dans <code>values.yaml</code>.
+      </div>
+      <details class="fold hint"><summary>💡 Indice 1 — l'API</summary>
+        <div class="fold-body"><p>L'objet s'appelle <code>HorizontalPodAutoscaler</code>. La version d'API
+        stable et complète (permettant les métriques CPU/mémoire personnalisées) est <code>autoscaling/v2</code> —
+        voir la
+        <a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/" target="_blank">doc
+        Kubernetes du HPA</a>. Il cible le Deployment via un champ <code>scaleTargetRef</code>.</p></div>
+      </details>
+      <details class="fold hint"><summary>💡 Indice 2 — la métrique</summary>
+        <div class="fold-body"><p>La cible est une métrique <code>Resource</code> sur <code>cpu</code>, en
+        <code>Utilization</code> (pourcentage moyen). La structure exacte (<code>metrics</code> →
+        <code>resource</code> → <code>target</code>) est illustrée dans la
+        <a href="https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/" target="_blank">walkthrough
+        HPA</a>. ⚠️ Deux prérequis : les <strong>requests CPU</strong> du Deployment (ajoutées en 7.1, sinon le HPA
+        ne peut pas calculer le %) et le <code>metrics-server</code> (déjà présent sur EKS).</p></div>
+      </details>
+      <details class="fold solution"><summary>✅ Solution complète</summary>
+        <div class="fold-body">
+      <p><code>values.yaml</code> — ajoutez :</p>
+      <div class="code">
+<pre>hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 50</pre>
+      </div>
+      <p><code>templates/hpa.yaml</code> :</p>
+      <div class="code">
+<pre>{{- if .Values.hpa.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: podinfo
+  labels:
+    app: podinfo
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: podinfo
+  minReplicas: {{ .Values.hpa.minReplicas }}
+  maxReplicas: {{ .Values.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.hpa.targetCPUUtilizationPercentage }}
+{{- end }}</pre>
+      </div>
+        </div>
+      </details>
+      <div class="callout check">
+        <div class="c-title">✅ Après commit</div>
+        <code>kubectl get hpa -n podinfo</code> montre le HPA (cible CPU, min/max). Au repos il reste à 1 pod —
+        c'est normal.
+      </div>
+
+      <h3>7.6 — Exposer podinfo à Prometheus (<code>templates/servicemonitor.yaml</code>)</h3>
+      <div class="goal">
+        <div class="g-title">🎯 Objectif</div>
+        podinfo expose déjà ses métriques au format Prometheus sur <code>/metrics</code> (port <code>http</code>,
+        9898). Créez <code>charts/podinfo/templates/servicemonitor.yaml</code> : un <strong>ServiceMonitor</strong>
+        qui dit à Prometheus (installé à l'étape 6) de <strong>scraper</strong> le Service podinfo. Ajoutez la
+        valeur <code>serviceMonitor.enabled</code> dans <code>values.yaml</code>.
+      </div>
+      <div class="callout info">
+        <div class="c-title">🔎 ServiceMonitor, c'est quoi ?</div>
+        C'est une <strong>CRD</strong> installée par l'operator Prometheus (Application <code>monitoring</code>).
+        Prometheus la détecte automatiquement (les sélecteurs du stack sont ouverts) et se met à collecter
+        l'endpoint <code>/metrics</code> ciblé. Pas besoin de toucher à la config de Prometheus : tout est
+        déclaratif, en GitOps.
+      </div>
+      <details class="fold hint"><summary>💡 Indice 1 — l'API et la cible</summary>
+        <div class="fold-body"><p><code>apiVersion: monitoring.coreos.com/v1</code>, <code>kind: ServiceMonitor</code>.
+        Un <code>selector.matchLabels</code> qui cible <code>app: podinfo</code> (les mêmes labels que votre
+        Service).</p></div>
+      </details>
+      <details class="fold hint"><summary>💡 Indice 2 — l'endpoint</summary>
+        <div class="fold-body"><p>Sous <code>endpoints:</code>, référencez le port <strong>par son nom</strong>
+        (<code>port: http</code>, celui défini dans le Deployment/Service), <code>path: /metrics</code>, et un
+        <code>interval</code> de scrape (ex. <code>15s</code>). Entourez le tout d'un
+        <code>{{- if .Values.serviceMonitor.enabled }}</code> comme pour le HPA.</p></div>
+      </details>
+      <details class="fold solution"><summary>✅ Solution complète</summary>
+        <div class="fold-body">
+      <p><code>values.yaml</code> — ajoutez :</p>
+      <div class="code">
+<pre>serviceMonitor:
+  enabled: true</pre>
+      </div>
+      <p><code>templates/servicemonitor.yaml</code> :</p>
+      <div class="code">
+<pre>{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: podinfo
+  labels:
+    app: podinfo
+spec:
+  selector:
+    matchLabels:
+      app: podinfo
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+{{- end }}</pre>
+      </div>
+        </div>
+      </details>
+      <div class="callout check">
+        <div class="c-title">✅ Après commit — observer les métriques</div>
+        Ouvrez l'UI de Prometheus (port-forward local, dans un terminal avec <code>export KUBECONFIG</code>) :
+        <div class="code">
+<pre>kubectl port-forward svc/prometheus-operated -n monitoring 9090:9090</pre>
+        </div>
+        Puis <a href="http://localhost:9090" target="_blank">http://localhost:9090</a> → onglet
+        <strong>Graph</strong>. Dans <em>Status → Targets</em>, la cible <code>podinfo</code> apparaît en
+        <code>UP</code>. Testez une requête, p. ex. <code>http_requests_total</code> ou
+        <code>process_cpu_seconds_total{namespace="podinfo"}</code>. Vous avez construit un chart Helm complet,
+        <strong>scrapé par Prometheus</strong>, le tout en GitOps. 🎉
+      </div>
+
+      <h3>7.7 — (Bonus) Observabilité avec Dynatrace, <em>en complément</em> de Prometheus</h3>
+      <div class="goal">
+        <div class="g-title">🎯 Objectif</div>
+        Ajouter <strong>Dynatrace</strong> comme plateforme d'observabilité, <strong>en plus</strong> de
+        Prometheus (option A) : déployer le <strong>Dynatrace Operator</strong> via ArgoCD, puis un
+        <strong>DynaKube</strong> qui connecte le cluster à votre tenant Dynatrace. Prometheus et le
+        ServiceMonitor (7.6) restent en place.
+      </div>
+      <div class="callout warn">
+        <div class="c-title">⚠️ Prérequis spécifiques à cette étape (bonus, optionnel)</div>
+        Contrairement au reste de l'atelier (100 % dans la sandbox), Dynatrace exige un
+        <strong>compte externe</strong> :
+        <ul class="clean">
+          <li>Un <strong>tenant Dynatrace</strong> — <a href="https://www.dynatrace.com/try-free/" target="_blank">essai
+          gratuit 15 jours</a>. Il vous donne un <strong>environment ID</strong> et l'URL
+          <code>https://&lt;ENVIRONMENTID&gt;.live.dynatrace.com</code>.</li>
+          <li>Deux <strong>tokens</strong> générés dans l'UI Dynatrace (voir
+          <a href="https://docs.dynatrace.com/docs/ingest-from/setup-on-k8s/deployment/tokens-permissions" target="_blank">Tokens
+          &amp; permissions</a>) : un <em>operator token</em> (<code>apiToken</code>) et un <em>data ingest
+          token</em> (<code>dataIngestToken</code>).</li>
+        </ul>
+        Si vous n'avez pas de tenant, sautez cette étape : l'atelier est complet sans elle.
+      </div>
+
+      <h4><span class="env cloud">CloudShell</span> — créer le namespace et le Secret des tokens</h4>
+      <p>Le Secret contient des jetons sensibles : il ne doit <strong>jamais</strong> être commité dans votre
+      fork public. On le crée donc <strong>à la main</strong>, hors GitOps (dans CloudShell, ou en local avec le
+      kubeconfig chargé) :</p>
+      <div class="code">
+<pre>kubectl create namespace dynatrace
+kubectl -n dynatrace create secret generic dynakube \
+  --from-literal="apiToken=&lt;OPERATOR_TOKEN&gt;" \
+  --from-literal="dataIngestToken=&lt;DATA_INGEST_TOKEN&gt;"</pre>
+      </div>
+      <div class="callout info">
+        <div class="c-title">💡 Pourquoi hors Git ?</div>
+        C'est le seul élément de l'atelier qui n'est pas en GitOps : un <strong>secret ne va jamais dans un dépôt
+        public</strong>. Le reste (Operator + DynaKube) est bien géré par ArgoCD.
+      </div>
+
+      <h4><span class="env local">Poste local</span> — personnaliser puis appliquer</h4>
+      <p>Votre fork contient déjà <code class="inline">dynatrace/dynakube.yaml</code> et
+      <code class="inline">argocd/dynatrace.yaml</code>. Deux remplacements à faire dans votre IDE :</p>
+      <ul class="clean">
+        <li>Dans <code>dynatrace/dynakube.yaml</code> : remplacez <code>ENVIRONMENTID</code> par l'ID de votre
+        tenant (garde le suffixe <code>/api</code>).</li>
+        <li>Dans <code>argocd/dynatrace.yaml</code> (Application <code>dynakube</code>) : remplacez
+        <code>repoURL</code> par l'URL de <strong>votre fork</strong> (comme pour podinfo).</li>
+      </ul>
+      <p>Committez ces deux modifications, puis appliquez les Applications ArgoCD :</p>
+      <div class="code">
+<pre>export KUBECONFIG=.local/atelier-kubeconfig.yaml
+kubectl apply -f argocd/dynatrace.yaml
+kubectl -n argocd get applications</pre>
+      </div>
+      <div class="callout info">
+        <div class="c-title">💡 Ordre géré par ArgoCD (sync-waves)</div>
+        <code>argocd/dynatrace.yaml</code> déclare deux Applications : <code>dynatrace-operator</code>
+        (wave 0, installe l'operator + la CRD DynaKube) puis <code>dynakube</code> (wave 10, applique le CR). Un
+        <code>retry</code> couvre le court délai de disponibilité de la CRD.
+      </div>
+      <div class="callout warn">
+        <div class="c-title">⚠️ Ressources sandbox</div>
+        Le DynaKube fourni utilise le mode <strong>léger</strong> <code>applicationMonitoring</code> (pas de OneAgent
+        full-stack ni de CSI driver sur chaque nœud), adapté aux 2 nœuds t3.medium. Le mode
+        <code>cloudNativeFullStack</code> (commenté dans le fichier) est bien plus lourd — à réserver à un cluster
+        plus grand.
+      </div>
+      <div class="callout check">
+        <div class="c-title">✅ Après application</div>
+        <code>kubectl get dynakube -n dynatrace</code> passe à <code>Running</code> et
+        <code>kubectl get pods -n dynatrace</code> montre l'operator + l'ActiveGate en <code>Running</code>. Dans
+        l'UI Dynatrace (votre tenant), le cluster Kubernetes et podinfo apparaissent au bout de quelques minutes.
+        Vous avez maintenant <strong>Prometheus ET Dynatrace</strong>, tous deux gérés en GitOps. 🎉
+      </div>
+    </section>
+
+    <!-- TEARDOWN -->
+    <section id="teardown">
+      <span class="step-badge">Étape 8</span><span class="time-badge">CloudShell · optionnel</span>
+      <h2>Nettoyage</h2>
+      <div class="callout info">
+        <div class="c-title">💡 Sandbox éphémère</div>
+        La sandbox est détruite automatiquement (~4h) et n'est pas facturée. Le nettoyage est
+        <strong>optionnel</strong>, mais le faire libère la sandbox plus tôt.
+      </div>
+      <div class="code">
+<pre>eksctl delete cluster --name atelier-argocd --region us-east-1</pre>
+      </div>
+      <p style="margin-top:24px;font-size:1.05rem">Bravo — vous avez écrit un chart Helm et vécu le GitOps de
+      bout en bout. 🎓</p>
+    </section>
+  </main>
+</div>
+
+<script>
+  // ---- Copy buttons ----
+  document.querySelectorAll('.code').forEach(function (block) {
+    var pre = block.querySelector('pre');
+    var btn = document.createElement('button');
+    btn.className = 'copy-btn';
+    btn.textContent = 'Copier';
+    btn.addEventListener('click', function () {
+      navigator.clipboard.writeText(pre.textContent).then(function () {
+        btn.textContent = 'Copié ✓'; btn.classList.add('copied');
+        setTimeout(function () { btn.textContent = 'Copier'; btn.classList.remove('copied'); }, 1500);
+      }).catch(function () { btn.textContent = 'Erreur'; });
+    });
+    block.appendChild(btn);
+  });
+
+  // ---- Suivi de position (étape courante) ----
+  var links = Array.prototype.slice.call(document.querySelectorAll('nav a[data-step]'));
+  var sections = links.map(function (a) { return document.querySelector(a.getAttribute('href')); });
+  var fill = document.getElementById('progressFill');
+  var label = document.getElementById('progressLabel');
+
+  function setCurrent(index) {
+    links.forEach(function (a, i) {
+      a.classList.remove('current', 'past');
+      if (i < index) a.classList.add('past');
+      else if (i === index) a.classList.add('current');
+    });
+    var pct = Math.round(((index + 1) / links.length) * 100);
+    fill.style.width = pct + '%';
+    label.textContent = 'Progression : ' + pct + ' %';
+  }
+
+  var visibility = {};
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      visibility[entry.target.id] = entry.isIntersecting ? entry.intersectionRatio : 0;
+    });
+    var currentIndex = 0, found = false;
+    for (var i = 0; i < sections.length; i++) {
+      var s = sections[i];
+      if (s && visibility[s.id] > 0) { currentIndex = i; found = true; break; }
+    }
+    if (found) setCurrent(currentIndex);
+  }, { rootMargin: '-30% 0px -60% 0px', threshold: [0, 0.1, 0.5, 1] });
+  sections.forEach(function (s) { if (s) observer.observe(s); });
+  setCurrent(0);
+
+  // ---- Mobile menu ----
+  var toggle = document.getElementById('menuToggle');
+  var nav = document.getElementById('nav');
+  if (toggle) { toggle.addEventListener('click', function () { nav.classList.toggle('open'); }); }
+</script>
+</body>
+</html>

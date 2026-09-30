@@ -1,0 +1,90 @@
+# =============================================================================
+# Application ArgoCD - monitoring (kube-prometheus-stack, profil ALLÉGÉ)
+# =============================================================================
+# Déploie Prometheus via ArgoCD, en GitOps, à partir du dépôt Helm public
+# prometheus-community. Le profil est volontairement ALLÉGÉ pour tenir sur la
+# sandbox Pluralsight (2 nœuds t3.medium partagés avec ArgoCD + podinfo) :
+#   - visualisation via l'UI native de Prometheus uniquement
+#   - PAS d'Alertmanager
+#   - PAS de persistance (stockage éphémère : données perdues au restart)
+#   - une seule réplique Prometheus, rétention courte
+#   - scrape automatique de podinfo grâce au ServiceMonitor (voir étape 7.6)
+#
+# L'exploration des métriques se fait via l'UI native de Prometheus
+# (onglet Graph / expression browser), en port-forward — voir étape 7.6.
+#
+# ⚠️  Contrairement à l'Application podinfo (qui pointe vers VOTRE fork), cette
+#     Application pointe vers un dépôt Helm PUBLIC : rien à personnaliser ici.
+#
+# Appliquer :  kubectl apply -f argocd/monitoring.yaml
+# Suivre    :  kubectl -n argocd get applications
+# =============================================================================
+
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    # Dépôt Helm public de la communauté Prometheus (pas votre fork).
+    repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    # Version du chart épinglée (reproductibilité). Voir artifacthub.io si besoin.
+    targetRevision: "91.5.3"
+    helm:
+      # Valeurs inline : profil léger pour la sandbox.
+      values: |
+        # --- Visualisation embarquée : non désirée -> désactivée.
+        grafana:
+          enabled: false
+
+        # --- Alertmanager : inutile pour l'atelier -> désactivé (économie de RAM).
+        alertmanager:
+          enabled: false
+
+        # --- Prometheus : une réplique, sans persistance, rétention courte.
+        prometheus:
+          prometheusSpec:
+            replicas: 1
+            retention: 2h
+            # Découvre AUSSI les ServiceMonitors hors du chart (dont podinfo).
+            serviceMonitorSelectorNilUsesHelmValues: false
+            podMonitorSelectorNilUsesHelmValues: false
+            resources:
+              requests:
+                cpu: 100m
+                memory: 300Mi
+              limits:
+                cpu: 500m
+                memory: 600Mi
+            # Pas de PVC : stockage éphémère (emptyDir implicite).
+
+        # --- Operator : garde node-exporter + kube-state-metrics (métriques
+        #     nœuds/objets) ; on allège juste ses ressources.
+        prometheusOperator:
+          resources:
+            requests:
+              cpu: 50m
+              memory: 100Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # Le chart installe des CRDs volumineuses : on les applique en server-side
+      # pour éviter l'erreur "annotation too long".
+      - CreateNamespace=true
+      - ServerSideApply=true

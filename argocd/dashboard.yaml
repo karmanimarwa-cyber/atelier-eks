@@ -1,0 +1,101 @@
+# =============================================================================
+# Applications ArgoCD - Kubernetes Dashboard (+ metrics-server)
+# =============================================================================
+# Déploie, en GitOps via ArgoCD, l'UI officielle Kubernetes Dashboard ainsi que
+# le metrics-server. Le Dashboard donne une vue complète du cluster : workloads
+# (Deployments, Pods, Jobs…), statut/redémarrages des pods, events, logs et exec,
+# config (ConfigMaps/Secrets), réseau et stockage. Grâce au metrics-server, il
+# affiche aussi les graphiques d'utilisation CPU / RAM par nœud, namespace et pod.
+#
+# Deux Applications, ordonnées par sync-wave :
+#   - wave 0  : metrics-server (fournit l'API metrics.k8s.io -> CPU/RAM)
+#   - wave 10 : kubernetes-dashboard (l'UI, qui consomme ces métriques)
+#
+# EKS n'installe PAS le metrics-server par défaut : sans lui, le Dashboard
+# s'affiche mais les graphiques CPU/RAM restent vides. On l'ajoute donc ici.
+#
+# ⚠️  Ces deux Applications pointent vers des dépôts Helm PUBLICS :
+#     rien à personnaliser ici (contrairement à l'Application podinfo).
+#
+# Appliquer :  kubectl apply -f argocd/dashboard.yaml
+# Suivre    :  kubectl -n argocd get applications
+# =============================================================================
+
+# --- Application 1 : metrics-server (API metrics.k8s.io) ---------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: metrics-server
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    # Dépôt Helm public du metrics-server (rien à personnaliser).
+    repoURL: https://kubernetes-sigs.github.io/metrics-server/
+    chart: metrics-server
+    targetRevision: "3.12.2"
+    helm:
+      values: |
+        # Profil léger pour la sandbox (2 nœuds partagés).
+        resources:
+          requests:
+            cpu: 25m
+            memory: 64Mi
+          limits:
+            cpu: 100m
+            memory: 128Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - Replace=true
+---
+# --- Application 2 : Kubernetes Dashboard (UI) -------------------------------
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kubernetes-dashboard
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://kubernetes-retired.github.io/dashboard/
+    chart: kubernetes-dashboard
+    targetRevision: "7.10.0"
+    helm:
+      # Profil allégé pour la sandbox : une réplique par composant.
+      values: |
+        app:
+          scaling:
+            replicas: 1
+        # Le Dashboard v7 embarque plusieurs composants (web, api, auth,
+        # metrics-scraper) via Kong. On garde les valeurs par défaut, suffisantes
+        # pour l'atelier.
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kubernetes-dashboard
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 15s
+        factor: 2
+        maxDuration: 3m

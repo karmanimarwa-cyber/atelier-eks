@@ -1,0 +1,74 @@
+# =============================================================================
+# DynaKube — configuration Dynatrace pour l'atelier (COMPLÉMENT de Prometheus)
+# =============================================================================
+# Cette ressource dit à l'operator Dynatrace COMMENT surveiller le cluster.
+# Elle est déployée par ArgoCD (Application "dynakube", voir argocd/dynatrace.yaml)
+# depuis VOTRE fork.
+#
+# ⚠️  DEUX prérequis AVANT que ça fonctionne (voir guide, étape 7.7) :
+#   1) Un tenant Dynatrace (essai gratuit 15 j possible) → vous donne un
+#      "environment ID" et l'URL https://<ENVIRONMENTID>.live.dynatrace.com
+#   2) Un Secret nommé "dynakube" dans le namespace "dynatrace", contenant les
+#      deux tokens (apiToken + dataIngestToken). Ce Secret est créé À LA MAIN en
+#      CloudShell (JAMAIS commité — un token ne va pas dans un dépôt public) :
+#
+#        kubectl -n dynatrace create secret generic dynakube \
+#          --from-literal="apiToken=<OPERATOR_TOKEN>" \
+#          --from-literal="dataIngestToken=<DATA_INGEST_TOKEN>"
+#
+# ⚙️  MODE CHOISI : "applicationMonitoring" (léger, adapté à la sandbox 2 nœuds
+#     t3.medium). Il n'installe PAS le OneAgent full-stack ni le CSI driver sur
+#     chaque nœud. Pour une observabilité plus profonde (hors sandbox), voir le
+#     bloc commenté "cloudNativeFullStack" plus bas.
+#
+# 🔗  Prometheus reste en place : Dynatrace vient EN COMPLÉMENT (option A).
+# =============================================================================
+
+apiVersion: dynatrace.com/v1beta5
+kind: DynaKube
+metadata:
+  name: dynakube
+  namespace: dynatrace
+  annotations:
+    feature.dynatrace.com/injection-readonly-volume: "true"
+spec:
+  # 👇 REMPLACEZ 'ENVIRONMENTID' par l'ID de VOTRE tenant Dynatrace.
+  #    Gardez le suffixe /api à la fin.
+  apiUrl: https://ENVIRONMENTID.live.dynatrace.com/api
+
+  # Enrichit les métriques/traces avec les métadonnées Kubernetes (labels, etc.).
+  metadataEnrichment:
+    enabled: true
+
+  # --- Surveillance applicative légère (injection à la demande, pas de CSI) ---
+  oneAgent:
+    applicationMonitoring: {}
+
+  # --- ActiveGate : passerelle qui remonte les métriques d'état du cluster ---
+  activeGate:
+    capabilities:
+      - routing
+      - kubernetes-monitoring
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+      limits:
+        cpu: 500m
+        memory: 1Gi
+
+# =============================================================================
+# VARIANTE — cloudNativeFullStack (observabilité profonde, LOURDE).
+# À n'utiliser QUE sur un cluster plus grand (pas la sandbox 2×t3.medium) :
+# remplacez tout le bloc "oneAgent:" ci-dessus par :
+#
+#   oneAgent:
+#     cloudNativeFullStack:
+#       tolerations:
+#         - effect: NoSchedule
+#           key: node-role.kubernetes.io/control-plane
+#           operator: Exists
+#
+# ⚠️  cloudNativeFullStack déploie OneAgent + CSI driver en DaemonSet sur CHAQUE
+#     nœud → consommation mémoire/CPU nettement supérieure.
+# =============================================================================

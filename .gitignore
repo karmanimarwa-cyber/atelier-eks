@@ -1,0 +1,54 @@
+# =============================================================================
+# .gitignore — Atelier GitOps (Helm + ArgoCD + EKS)
+# =============================================================================
+
+# --- Local / secrets du TP -----------------------------------------------
+# Dossier local du TP : kubeconfig avec token d'accès au cluster, etc.
+# NE JAMAIS committer. Fichiers éphémères, propres à chaque poste.
+.local/
+
+# Fichier de contexte pour l'agent IA (méta, pas pour les participants).
+AGENTS.md
+
+# Kubeconfig(s) éventuellement déposés à la racine par erreur.
+*kubeconfig*.yaml
+kubeconfig
+*.kubeconfig
+
+# Fichiers d'environnement / secrets
+.env
+.env.*
+*.pem
+*.key
+
+# --- Dynatrace (bonus) ----------------------------------------------------
+# Le Secret des tokens Dynatrace se crée À LA MAIN (kubectl), JAMAIS dans Git.
+# Par sécurité on ignore tout fichier de secret Dynatrace déposé par erreur.
+dynatrace/*secret*.yaml
+dynatrace/*-secret.yaml
+dynatrace-tokens*
+
+# --- Helm -----------------------------------------------------------------
+# Dépendances de charts téléchargées et archives packagées.
+charts/**/charts/
+*.tgz
+Chart.lock
+
+# --- IDE / éditeurs -------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- macOS / OS ------------------------------------------------------------
+.DS_Store
+.DS_Store?
+Thumbs.db
+ehthumbs.db
+desktop.ini
+
+# --- Logs / temporaires ----------------------------------------------------
+*.log
+tmp/
+.tmp/
